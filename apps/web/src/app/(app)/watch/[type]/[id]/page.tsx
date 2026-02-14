@@ -35,7 +35,7 @@ export default function WatchPage({ params }: PageProps) {
   }, [content]);
 
   // Fetch sources
-  const { data: sources, isLoading: sourcesLoading } = useQuery({
+  const { data: sources, isLoading: sourcesLoading, error: sourcesError } = useQuery({
     queryKey: ['stream', 'sources', type, tmdbId, season, episode],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -122,6 +122,13 @@ export default function WatchPage({ params }: PageProps) {
                 >
                   Retry
                 </Button>
+              </div>
+            ) : sourcesError ? (
+              <div className="text-center">
+                <p className="text-sm text-error">
+                  {sourcesError instanceof Error ? sourcesError.message : 'Failed to load sources'}
+                </p>
+                <p className="mt-1 text-xs text-text-muted">Check Settings to verify your debrid API key.</p>
               </div>
             ) : (
               <p className="text-sm text-text-secondary">

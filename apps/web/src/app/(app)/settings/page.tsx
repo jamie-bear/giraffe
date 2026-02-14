@@ -17,6 +17,8 @@ export default function SettingsPage() {
 
   const [debridKey, setDebridKey] = useState('');
   const [debridProvider, setDebridProvider] = useState('real-debrid');
+  const [debridError, setDebridError] = useState('');
+  const [showUpdateKey, setShowUpdateKey] = useState(false);
   const [preferredQuality, setPreferredQuality] = useState('1080p');
   const [language, setLanguage] = useState('en');
 
@@ -47,14 +49,24 @@ export default function SettingsPage() {
       }),
     onSuccess: () => {
       setDebridKey('');
+      setDebridError('');
+      setShowUpdateKey(false);
       queryClient.invalidateQueries({ queryKey: ['user', 'profile'] });
+    },
+    onError: (err) => {
+      setDebridError(err instanceof Error ? err.message : 'Failed to save key');
     },
   });
 
   const removeDebridKey = useMutation({
     mutationFn: () => apiClient('/user/debrid-key', { method: 'DELETE' }),
     onSuccess: () => {
+      setDebridError('');
+      setShowUpdateKey(false);
       queryClient.invalidateQueries({ queryKey: ['user', 'profile'] });
+    },
+    onError: (err) => {
+      setDebridError(err instanceof Error ? err.message : 'Failed to remove key');
     },
   });
 
@@ -128,7 +140,11 @@ export default function SettingsPage() {
       <Card className="p-5">
         <h2 className="mb-4 text-lg font-semibold">Debrid Service</h2>
 
-        {profile?.hasDebridKey ? (
+        {debridError && (
+          <p className="mb-3 text-sm text-error">{debridError}</p>
+        )}
+
+        {profile?.hasDebridKey && !showUpdateKey ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <div>
@@ -137,21 +153,37 @@ export default function SettingsPage() {
                   Provider: {profile.debridProvider}
                 </p>
               </div>
-              <Button
-                variant="danger"
-                size="sm"
-                onClick={() => removeDebridKey.mutate()}
-                disabled={removeDebridKey.isPending}
-              >
-                Remove Key
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowUpdateKey(true)}
+                >
+                  Update Key
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => removeDebridKey.mutate()}
+                  disabled={removeDebridKey.isPending}
+                >
+                  {removeDebridKey.isPending ? 'Removing...' : 'Remove Key'}
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-sm text-text-secondary">
-              Connect your debrid service to start streaming. Your API key is encrypted at rest.
-            </p>
+            {!profile?.hasDebridKey && (
+              <p className="text-sm text-text-secondary">
+                Connect your debrid service to start streaming. Your API key is encrypted at rest.
+              </p>
+            )}
+            {showUpdateKey && (
+              <p className="text-sm text-text-secondary">
+                Enter a new API key to replace the existing one.
+              </p>
+            )}
             <div className="flex items-end gap-3">
               <select
                 value={debridProvider}
@@ -170,11 +202,26 @@ export default function SettingsPage() {
                 />
               </div>
               <Button
-                onClick={() => saveDebridKey.mutate()}
+                onClick={() => {
+                  setDebridError('');
+                  saveDebridKey.mutate();
+                }}
                 disabled={!debridKey || saveDebridKey.isPending}
               >
                 {saveDebridKey.isPending ? 'Saving...' : 'Save'}
               </Button>
+              {showUpdateKey && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setShowUpdateKey(false);
+                    setDebridKey('');
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
             </div>
           </div>
         )}

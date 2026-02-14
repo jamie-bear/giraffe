@@ -29,7 +29,13 @@ async function getDebridProvider(userId: string): Promise<DebridProvider> {
     throw new ValidationError('No debrid API key configured. Add one in Settings.');
   }
 
-  const apiKey = decrypt(user.debridApiKeyEncrypted);
+  let apiKey: string;
+  try {
+    apiKey = decrypt(user.debridApiKeyEncrypted);
+  } catch (err) {
+    console.error('Failed to decrypt debrid API key:', err);
+    throw new ValidationError('Debrid API key is corrupted. Please remove and re-add it in Settings.');
+  }
 
   switch (user.debridProvider) {
     case 'real-debrid':

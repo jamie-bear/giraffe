@@ -66,24 +66,30 @@ export async function authRoutes(app: FastifyInstance) {
   );
 
   typedApp.post('/refresh', async (request, reply) => {
-    const oldToken = request.cookies[REFRESH_COOKIE];
-    if (!oldToken) {
-      return reply.code(401).send({ error: 'Unauthorized', message: 'No refresh token', statusCode: 401 });
+    try {
+      const oldToken = request.cookies?.[REFRESH_COOKIE];
+      if (!oldToken) {
+        return reply.code(401).send({ error: 'Unauthorized', message: 'No refresh token', statusCode: 401 });
+      }
+
+      const { userId, newToken } = await rotateRefreshToken(oldToken);
+
+      // Look up username for the new access token
+      const [user] = await db
+        .select({ username: users.username })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1);
+
+      const accessToken = app.jwt.sign({ sub: userId, username: user?.username ?? '' });
+
+      reply.setCookie(REFRESH_COOKIE, newToken, REFRESH_COOKIE_OPTIONS);
+      return { accessToken };
+    } catch (err) {
+      // Log the actual error for debugging, return 401 to client
+      app.log.error(err, 'Token refresh failed');
+      return reply.code(401).send({ error: 'Unauthorized', message: 'Token refresh failed', statusCode: 401 });
     }
-
-    const { userId, newToken } = await rotateRefreshToken(oldToken);
-
-    // Look up username for the new access token
-    const [user] = await db
-      .select({ username: users.username })
-      .from(users)
-      .where(eq(users.id, userId))
-      .limit(1);
-
-    const accessToken = app.jwt.sign({ sub: userId, username: user?.username ?? '' });
-
-    reply.setCookie(REFRESH_COOKIE, newToken, REFRESH_COOKIE_OPTIONS);
-    return { accessToken };
   });
 
   typedApp.post(
