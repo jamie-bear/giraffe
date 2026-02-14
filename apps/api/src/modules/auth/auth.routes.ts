@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { registerBodySchema, loginBodySchema } from './auth.schemas.js';
+import { eq } from 'drizzle-orm';
 import {
   registerUser,
   verifyCredentials,
@@ -9,12 +10,18 @@ import {
   revokeRefreshToken,
 } from './auth.service.js';
 import { config } from '../../config/index.js';
+import { db } from '../../db/index.js';
+import { users } from '../../db/schema/users.js';
 
 const REFRESH_COOKIE = 'refreshToken';
+
+// In production with cross-origin (e.g. Vercel frontend → Railway API),
+// cookies must use sameSite: 'none' + secure: true to be sent cross-origin.
+const isProduction = config.NODE_ENV === 'production';
 const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: config.NODE_ENV === 'production',
-  sameSite: 'strict' as const,
+  secure: isProduction, // must be true for sameSite 'none'
+  sameSite: (isProduction ? 'none' : 'strict') as 'none' | 'strict',
   path: '/api/v1/auth',
   maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
 };
@@ -67,7 +74,13 @@ export async function authRoutes(app: FastifyInstance) {
     const { userId, newToken } = await rotateRefreshToken(oldToken);
 
     // Look up username for the new access token
-    const accessToken = app.jwt.sign({ sub: userId, username: '' });
+    const [user] = await db
+      .select({ username: users.username })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+
+    const accessToken = app.jwt.sign({ sub: userId, username: user?.username ?? '' });
 
     reply.setCookie(REFRESH_COOKIE, newToken, REFRESH_COOKIE_OPTIONS);
     return { accessToken };

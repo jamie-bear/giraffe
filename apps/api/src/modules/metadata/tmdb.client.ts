@@ -2,13 +2,27 @@ import { config } from '../../config/index.js';
 import { ExternalServiceError } from '../../utils/errors.js';
 
 const BASE = config.TMDB_BASE_URL;
-const headers = {
-  Authorization: `Bearer ${config.TMDB_API_KEY}`,
+
+// TMDB supports two auth methods:
+// 1. Bearer token (Read Access Token — a long JWT ~200 chars)
+// 2. API key as query param (shorter 32-char hex key)
+// Auto-detect based on key length
+const apiKey = config.TMDB_API_KEY;
+const useBearerAuth = apiKey.length > 64;
+
+const headers: Record<string, string> = {
   'Content-Type': 'application/json',
+  ...(useBearerAuth ? { Authorization: `Bearer ${apiKey}` } : {}),
 };
 
 async function tmdbFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
   const url = new URL(`${BASE}${path}`);
+
+  // If using API key auth (not bearer), add it as query param
+  if (!useBearerAuth) {
+    url.searchParams.set('api_key', apiKey);
+  }
+
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
@@ -18,6 +32,8 @@ async function tmdbFetch<T>(path: string, params?: Record<string, string>): Prom
   const response = await fetch(url.toString(), { headers });
 
   if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    console.error(`TMDB API error: ${response.status} ${response.statusText} — ${body}`);
     throw new ExternalServiceError(
       'TMDB',
       `TMDB API error: ${response.status} ${response.statusText}`,
