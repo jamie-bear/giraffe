@@ -2,11 +2,15 @@ import { config } from './config/index.js';
 import { buildApp } from './app.js';
 import { closeDb } from './db/index.js';
 import { closeRedis } from './config/redis.js';
+import { runMigrations } from './db/migrate.js';
 
 const app = buildApp();
 
 async function start() {
   try {
+    // Run database migrations before starting the server
+    await runMigrations(config.DATABASE_URL);
+
     await app.listen({ port: config.APP_PORT, host: config.APP_HOST });
     app.log.info(`Server running at http://${config.APP_HOST}:${config.APP_PORT}`);
   } catch (err) {

@@ -22,5 +22,5 @@ COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 COPY tsconfig.base.json ./
 
-# Run database migrations on startup, then start the API server
-CMD ["sh", "-c", "npx tsx apps/api/src/db/migrate.ts && npx tsx apps/api/src/server.ts"]
+# Start the API server (migrations run automatically on startup)
+CMD ["npx", "tsx", "apps/api/src/server.ts"]

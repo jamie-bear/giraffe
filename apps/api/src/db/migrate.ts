@@ -1,13 +1,5 @@
 import pg from 'pg';
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) {
-  console.error('DATABASE_URL is not set');
-  process.exit(1);
-}
-
-const client = new pg.Client({ connectionString: DATABASE_URL });
-
 const migration = `
 -- Enable uuid extension
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
@@ -127,7 +119,8 @@ CREATE INDEX IF NOT EXISTS refresh_tokens_user_idx ON refresh_tokens (user_id);
 CREATE INDEX IF NOT EXISTS refresh_tokens_expires_idx ON refresh_tokens (expires_at);
 `;
 
-async function migrate() {
+export async function runMigrations(databaseUrl: string): Promise<void> {
+  const client = new pg.Client({ connectionString: databaseUrl });
   try {
     await client.connect();
     console.log('Connected to database, running migrations...');
@@ -135,10 +128,8 @@ async function migrate() {
     console.log('Database migration completed successfully!');
   } catch (err) {
     console.error('Migration failed:', err);
-    process.exit(1);
+    throw err;
   } finally {
     await client.end();
   }
 }
-
-migrate();
