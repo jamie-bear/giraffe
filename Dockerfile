@@ -19,5 +19,5 @@ COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 COPY tsconfig.base.json ./
 
-# Push database schema on startup, then start the API server
-CMD ["sh", "-c", "cd apps/api && npx drizzle-kit push && cd /app && npx tsx apps/api/src/server.ts"]
+# Run database migrations on startup, then start the API server
+CMD ["sh", "-c", "npx tsx apps/api/src/db/migrate.ts && npx tsx apps/api/src/server.ts"]
