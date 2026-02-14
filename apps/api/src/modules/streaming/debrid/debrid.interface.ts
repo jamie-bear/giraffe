@@ -6,6 +6,7 @@ export interface DebridSource {
   fileSize: number;
   hash: string;
   cached: boolean;
+  fileIdx?: number;
 }
 
 export interface ResolvedStreamResult {

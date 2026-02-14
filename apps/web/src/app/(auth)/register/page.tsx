@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -38,7 +38,7 @@ export default function RegisterPage() {
             alt="Giraffe"
             className="mb-3 h-24 w-auto"
           />
-          <p className="text-sm text-text-secondary">Create your account</p>
+          <p className="text-sm text-text-secondary">See Everything.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

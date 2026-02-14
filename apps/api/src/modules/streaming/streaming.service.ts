@@ -52,7 +52,8 @@ export async function getStreamSources(
   episode?: number,
 ): Promise<{ recommended: StreamSource | null; alternatives: StreamSource[] }> {
   const redis = getRedis();
-  const cacheKey = `stream:sources:${type}:${tmdbId}:${season ?? ''}:${episode ?? ''}`;
+  // Cache is scoped to userId because debrid cache status is account-specific
+  const cacheKey = `stream:sources:${cacheHash(userId)}:${type}:${tmdbId}:${season ?? ''}:${episode ?? ''}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
