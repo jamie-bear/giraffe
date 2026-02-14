@@ -1,4 +1,4 @@
-export { GENRES } from './genres.js';
+export { GENRES } from './genres';
 export {
   QUALITY_SCORES,
   SOURCE_SCORES,
@@ -6,5 +6,5 @@ export {
   TMDB_IMAGE_BASE,
   TMDB_POSTER_SIZES,
   TMDB_BACKDROP_SIZES,
-} from './quality.js';
-export { API_PATHS } from './api-paths.js';
+} from './quality';
+export { API_PATHS } from './api-paths';
