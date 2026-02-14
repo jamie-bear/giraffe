@@ -225,13 +225,16 @@ export const SOURCE_SCORES: Record<string, number> = {
   Unknown: 0,
 };
 
+// Codec scores: H.264 is preferred because it is universally browser-playable.
+// H.265/HEVC may offer better compression but cannot be decoded by most browsers,
+// resulting in a grey/black player with metadata visible but no video frames.
 export const CODEC_SCORES: Record<string, number> = {
-  AV1: 10,
-  'H.265': 8,
-  HEVC: 8,
-  'H.264': 5,
-  x264: 5,
-  x265: 8,
+  'H.264': 10,
+  x264: 10,
+  AV1: 7,
+  'H.265': 5,
+  HEVC: 5,
+  x265: 5,
   Unknown: 0,
 };
 
