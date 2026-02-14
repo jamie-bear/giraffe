@@ -10,6 +10,7 @@ import rateLimitPlugin from './plugins/rate-limit.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { metadataRoutes } from './modules/metadata/metadata.routes.js';
 import { streamingRoutes } from './modules/streaming/streaming.routes.js';
+import { transcodeRoutes } from './modules/transcode/transcode.routes.js';
 import { userRoutes } from './modules/user/user.routes.js';
 import { ratingsRoutes } from './modules/ratings/ratings.routes.js';
 import { historyRoutes } from './modules/watch-history/history.routes.js';
@@ -64,6 +65,7 @@ export function buildApp() {
   app.register(authRoutes, { prefix: '/api/v1/auth' });
   app.register(metadataRoutes, { prefix: '/api/v1' });
   app.register(streamingRoutes, { prefix: '/api/v1/stream' });
+  app.register(transcodeRoutes, { prefix: '/api/v1/transcode' });
   app.register(userRoutes, { prefix: '/api/v1/user' });
   app.register(ratingsRoutes, { prefix: '/api/v1/ratings' });
   app.register(historyRoutes, { prefix: '/api/v1/history' });
