@@ -19,5 +19,5 @@ COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 COPY tsconfig.base.json ./
 
-# Start the API server using tsx (runs TypeScript directly)
-CMD ["npx", "tsx", "apps/api/src/server.ts"]
+# Push database schema on startup, then start the API server
+CMD ["sh", "-c", "cd apps/api && npx drizzle-kit push && cd /app && npx tsx apps/api/src/server.ts"]
