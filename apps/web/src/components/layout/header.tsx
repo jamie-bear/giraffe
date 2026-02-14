@@ -1,6 +1,5 @@
 'use client';
 
-import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -12,7 +11,8 @@ export function Header() {
     <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur-sm">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/giraffe-logo-icon-v1.1.svg"
             alt="Giraffe"
             width={32}

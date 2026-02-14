@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -32,13 +31,11 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center">
-          <Image
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
             src="/giraffe-logo-font-v1.1.svg"
             alt="Giraffe"
-            width={200}
-            height={114}
             className="mb-3 h-24 w-auto"
-            priority
           />
           <p className="text-sm text-text-secondary">Sign in to your account</p>
         </div>
