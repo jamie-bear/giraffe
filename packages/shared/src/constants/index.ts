@@ -1,4 +1,4 @@
-export { GENRES } from './genres';
+export { GENRES } from './genres.ts';
 export {
   QUALITY_SCORES,
   SOURCE_SCORES,
@@ -6,5 +6,5 @@ export {
   TMDB_IMAGE_BASE,
   TMDB_POSTER_SIZES,
   TMDB_BACKDROP_SIZES,
-} from './quality';
-export { API_PATHS } from './api-paths';
+} from './quality.ts';
+export { API_PATHS } from './api-paths.ts';

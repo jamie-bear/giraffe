@@ -1,18 +1,18 @@
-export type { User, UserPreferences, UserProfile } from './user';
+export type { User, UserPreferences, UserProfile } from './user.ts';
 export type {
   Content,
   ContentSummary,
   ContentType,
   Genre,
   Season,
-} from './content';
+} from './content.ts';
 export type {
   StreamSource,
   ResolvedStream,
   StreamQuality,
   StreamCodec,
   StreamSourceType,
-} from './streaming';
-export type { Rating, RatingAggregate } from './rating';
-export type { Playlist, PlaylistItem, PlaylistSummary } from './playlist';
-export type { WatchProgress, HistoryEntry } from './watch-history';
+} from './streaming.ts';
+export type { Rating, RatingAggregate } from './rating.ts';
+export type { Playlist, PlaylistItem, PlaylistSummary } from './playlist.ts';
+export type { WatchProgress, HistoryEntry } from './watch-history.ts';
