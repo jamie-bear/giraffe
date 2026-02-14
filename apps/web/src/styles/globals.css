@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @theme {
+  --font-heading: var(--font-denk-one), system-ui, sans-serif;
   --color-bg: #0f0f0f;
   --color-bg-secondary: #1a1a1a;
   --color-bg-tertiary: #252525;

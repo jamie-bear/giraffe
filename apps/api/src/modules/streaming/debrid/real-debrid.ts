@@ -213,12 +213,20 @@ export class RealDebridProvider implements DebridProvider {
 
     let selectedFileId: string;
 
-    // If Torrentio gave us a fileIdx, use it to select the specific file
-    // (fileIdx is 0-based from Torrentio, RD file IDs are 1-based)
+    // If Torrentio gave us a fileIdx, use it to select the specific file —
+    // but only if it actually points to a video file (safety check).
     if (fileIdx != null && torrentInfo.files && torrentInfo.files.length > fileIdx) {
       const targetFile = torrentInfo.files[fileIdx];
-      selectedFileId = String(targetFile.id);
-      console.log(`[RD] Using Torrentio fileIdx ${fileIdx} → RD file #${targetFile.id}: ${targetFile.path}`);
+      const ext = targetFile.path.substring(targetFile.path.lastIndexOf('.')).toLowerCase();
+      if (VIDEO_EXTENSIONS.includes(ext)) {
+        selectedFileId = String(targetFile.id);
+        console.log(`[RD] Using Torrentio fileIdx ${fileIdx} → RD file #${targetFile.id}: ${targetFile.path}`);
+      } else {
+        // fileIdx points to a non-video file; fall back to largest video
+        console.warn(`[RD] fileIdx ${fileIdx} points to non-video: ${targetFile.path}, falling back`);
+        const largest = videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b), videoFiles[0]);
+        selectedFileId = largest ? String(largest.id) : 'all';
+      }
     } else if (videoFiles.length > 0) {
       // Fallback: select the largest video file
       const largest = videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b));

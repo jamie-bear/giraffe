@@ -19,7 +19,7 @@ export function Header() {
             height={32}
             className="h-8 w-8"
           />
-          <span className="text-xl font-bold text-accent">Giraffe</span>
+          <span className="font-heading text-xl text-accent">Giraffe</span>
         </Link>
 
         <nav className="flex items-center gap-4">
