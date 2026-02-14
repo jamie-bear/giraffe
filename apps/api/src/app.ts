@@ -16,13 +16,17 @@ import { historyRoutes } from './modules/watch-history/history.routes.js';
 import { AppError } from './utils/errors.js';
 
 export function buildApp() {
+  const isDev = process.env.NODE_ENV !== 'production';
+
   const app = Fastify({
-    logger: {
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true },
-      },
-    },
+    logger: isDev
+      ? {
+          transport: {
+            target: 'pino-pretty',
+            options: { colorize: true },
+          },
+        }
+      : true,
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
