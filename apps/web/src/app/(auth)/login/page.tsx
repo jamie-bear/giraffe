@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -30,8 +31,17 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <h1 className="mb-2 text-center text-2xl font-bold text-accent">Giraffe</h1>
-        <p className="mb-8 text-center text-sm text-text-secondary">Sign in to your account</p>
+        <div className="mb-8 flex flex-col items-center">
+          <Image
+            src="/giraffe-logo-font-v1.1.svg"
+            alt="Giraffe"
+            width={200}
+            height={114}
+            className="mb-3 h-24 w-auto"
+            priority
+          />
+          <p className="text-sm text-text-secondary">Sign in to your account</p>
+        </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Input

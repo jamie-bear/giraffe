@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Header } from '@/components/layout/header';
@@ -18,7 +19,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+        <Image
+          src="/giraffe-logo-icon-v1.1.svg"
+          alt="Loading..."
+          width={48}
+          height={48}
+          className="h-12 w-12 animate-pulse"
+          priority
+        />
       </div>
     );
   }
