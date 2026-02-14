@@ -6,6 +6,25 @@ import { getExternalIds } from '../../metadata/tmdb.client.js';
 
 const RD_BASE = 'https://api.real-debrid.com/rest/1.0';
 
+// Common trackers to append to bare magnet links — improves reliability
+const TRACKERS = [
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://open.stealth.si:80/announce',
+  'udp://tracker.torrent.eu.org:451/announce',
+  'udp://open.demonii.com:1337/announce',
+  'udp://explodie.org:6969/announce',
+  'udp://tracker.openbittorrent.com:6969/announce',
+  'http://tracker.openbittorrent.com:80/announce',
+  'udp://tracker.tiny-vps.com:6969/announce',
+];
+
+const VIDEO_EXTENSIONS = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.ts'];
+
+/** Helper to wait a specified number of milliseconds */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class RealDebridProvider implements DebridProvider {
   name = 'real-debrid';
   private apiKey: string;
@@ -14,6 +33,9 @@ export class RealDebridProvider implements DebridProvider {
     this.apiKey = apiKey;
   }
 
+  /**
+   * Fetch from Real-Debrid API. Handles 204 No Content responses gracefully.
+   */
   private async rdFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(`${RD_BASE}${path}`, {
       ...options,
@@ -25,13 +47,29 @@ export class RealDebridProvider implements DebridProvider {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
+      console.error(`[RD] ${options.method ?? 'GET'} ${path} → ${response.status}: ${body}`);
       throw new ExternalServiceError(
         'Real-Debrid',
         `Real-Debrid API error: ${response.status} ${body}`,
       );
     }
 
-    return response.json() as Promise<T>;
+    // Handle 204 No Content (e.g. selectFiles returns no body)
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
+    const text = await response.text();
+    if (!text) {
+      return undefined as T;
+    }
+
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      console.error(`[RD] Failed to parse JSON from ${path}:`, text.substring(0, 200));
+      return undefined as T;
+    }
   }
 
   async searchContent(
@@ -79,34 +117,123 @@ export class RealDebridProvider implements DebridProvider {
     }));
   }
 
+  /**
+   * Build a full magnet URI with trackers from a bare magnet or infoHash.
+   */
+  private buildMagnet(magnetOrHash: string): string {
+    let magnet = magnetOrHash;
+
+    // If it's already a magnet link, ensure it has trackers
+    if (magnet.startsWith('magnet:')) {
+      // Check if it already has trackers
+      if (!magnet.includes('&tr=')) {
+        const trackerParams = TRACKERS.map((t) => `&tr=${encodeURIComponent(t)}`).join('');
+        magnet += trackerParams;
+      }
+      return magnet;
+    }
+
+    // If it's a bare hash, build a full magnet URI
+    const trackerParams = TRACKERS.map((t) => `&tr=${encodeURIComponent(t)}`).join('');
+    return `magnet:?xt=urn:btih:${magnet}${trackerParams}`;
+  }
+
   async resolveSource(magnetOrLink: string): Promise<ResolvedStreamResult> {
-    // Step 1: Add magnet link
+    const magnet = this.buildMagnet(magnetOrLink);
+    console.log(`[RD] Resolving source, magnet hash: ${magnet.substring(0, 60)}...`);
+
+    // Step 1: Add magnet link to Real-Debrid
     const addResult = await this.rdFetch<{ id: string; uri: string }>('/torrents/addMagnet', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `magnet=${encodeURIComponent(magnetOrLink)}`,
+      body: `magnet=${encodeURIComponent(magnet)}`,
     });
 
-    // Step 2: Select all files
+    console.log(`[RD] Torrent added, id: ${addResult.id}`);
+
+    // Step 2: Get torrent info to find the best video file
+    interface RdFile {
+      id: number;
+      path: string;
+      bytes: number;
+      selected: number;
+    }
+    interface RdTorrentInfo {
+      id: string;
+      status: string;
+      files: RdFile[];
+      links: string[];
+    }
+
+    const torrentInfo = await this.rdFetch<RdTorrentInfo>(`/torrents/info/${addResult.id}`);
+
+    // Find the largest video file, or fall back to largest file
+    const videoFiles = (torrentInfo.files ?? []).filter((f) => {
+      const ext = f.path.substring(f.path.lastIndexOf('.')).toLowerCase();
+      return VIDEO_EXTENSIONS.includes(ext);
+    });
+
+    let selectedFileId: string;
+    if (videoFiles.length > 0) {
+      // Select the largest video file
+      const largest = videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b));
+      selectedFileId = String(largest.id);
+      console.log(`[RD] Selected video file #${largest.id}: ${largest.path} (${(largest.bytes / (1024*1024*1024)).toFixed(1)} GB)`);
+    } else {
+      // Fallback: select all files
+      selectedFileId = 'all';
+      console.log(`[RD] No video files detected, selecting all files`);
+    }
+
+    // Step 3: Select the file(s)
     await this.rdFetch(`/torrents/selectFiles/${addResult.id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'files=all',
+      body: `files=${selectedFileId}`,
     });
 
-    // Step 3: Get torrent info with links
-    const info = await this.rdFetch<{ links: string[] }>(`/torrents/info/${addResult.id}`);
+    console.log(`[RD] Files selected, waiting for links...`);
 
-    if (!info.links || info.links.length === 0) {
-      throw new ExternalServiceError('Real-Debrid', 'No links available for this torrent');
+    // Step 4: Poll for torrent readiness (links become available once downloaded/cached)
+    let links: string[] = [];
+    const maxAttempts = 15; // up to ~30 seconds
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const info = await this.rdFetch<RdTorrentInfo>(`/torrents/info/${addResult.id}`);
+
+      if (info.links && info.links.length > 0) {
+        links = info.links;
+        console.log(`[RD] Got ${links.length} link(s), status: ${info.status}`);
+        break;
+      }
+
+      console.log(`[RD] Attempt ${attempt + 1}/${maxAttempts}: status=${info.status}, no links yet...`);
+
+      // If torrent errored out, bail
+      if (info.status === 'error' || info.status === 'dead' || info.status === 'virus') {
+        throw new ExternalServiceError('Real-Debrid', `Torrent failed with status: ${info.status}`);
+      }
+
+      await sleep(2000);
     }
 
-    // Step 4: Unrestrict the first link to get direct download URL
-    const unrestricted = await this.rdFetch<{ download: string }>('/unrestrict/link', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `link=${encodeURIComponent(info.links[0])}`,
-    });
+    if (links.length === 0) {
+      throw new ExternalServiceError(
+        'Real-Debrid',
+        'Torrent is not cached and needs time to download. Try a cached source or wait a few minutes.',
+      );
+    }
+
+    // Step 5: Unrestrict the link to get direct download/streaming URL
+    const unrestricted = await this.rdFetch<{ download: string; streamable: number }>(
+      '/unrestrict/link',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `link=${encodeURIComponent(links[0])}`,
+      },
+    );
+
+    console.log(`[RD] Stream URL obtained: ${unrestricted.download.substring(0, 60)}... (streamable: ${unrestricted.streamable})`);
 
     return {
       streamUrl: unrestricted.download,

@@ -112,16 +112,41 @@ export default function WatchPage({ params }: PageProps) {
                 </p>
               </div>
             ) : resolveMutation.isError ? (
-              <div className="text-center">
-                <p className="text-sm text-error">Failed to resolve stream</p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="mt-2"
-                  onClick={() => selectedSource && resolveMutation.mutate(selectedSource.id)}
-                >
-                  Retry
-                </Button>
+              <div className="text-center px-4">
+                <p className="text-sm text-error">
+                  {resolveMutation.error instanceof Error
+                    ? resolveMutation.error.message
+                    : 'Failed to resolve stream'}
+                </p>
+                <p className="mt-1 text-xs text-text-muted">
+                  Try selecting a different source below, or retry this one.
+                </p>
+                <div className="mt-3 flex justify-center gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => selectedSource && resolveMutation.mutate(selectedSource.id)}
+                  >
+                    Retry
+                  </Button>
+                  {sources && sources.alternatives.length > 0 && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        // Try the next available source
+                        const allSources = [sources.recommended, ...sources.alternatives].filter(
+                          (s): s is StreamSource => s != null && s.id !== selectedSource?.id
+                        );
+                        if (allSources.length > 0) {
+                          handleSourceSelect(allSources[0]);
+                        }
+                      }}
+                    >
+                      Try Next Source
+                    </Button>
+                  )}
+                </div>
               </div>
             ) : sourcesError ? (
               <div className="text-center">
