@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/button';
 
 export function Header() {

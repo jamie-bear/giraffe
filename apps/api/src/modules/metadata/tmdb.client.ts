@@ -179,4 +179,27 @@ export async function getExternalIds(
   return tmdbFetch<{ imdb_id: string | null }>(`/${type}/${tmdbId}/external_ids`);
 }
 
+export interface TmdbEpisode {
+  episode_number: number;
+  name: string;
+  overview: string;
+  air_date: string | null;
+  still_path: string | null;
+  runtime: number | null;
+}
+
+export interface TmdbSeasonDetail {
+  season_number: number;
+  name: string;
+  overview: string;
+  episodes: TmdbEpisode[];
+}
+
+export async function getSeasonDetail(
+  tmdbId: number,
+  seasonNumber: number,
+): Promise<TmdbSeasonDetail> {
+  return tmdbFetch<TmdbSeasonDetail>(`/tv/${tmdbId}/season/${seasonNumber}`);
+}
+
 export type { TmdbMovieDetail, TmdbTvDetail, TmdbSearchResponse, TmdbSearchResult };

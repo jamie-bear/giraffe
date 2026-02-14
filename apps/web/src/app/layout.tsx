@@ -4,7 +4,7 @@ import '@/styles/globals.css';
 
 export const metadata: Metadata = {
   title: 'Giraffe',
-  description: 'Your personal media center',
+  description: 'See Everything.',
   icons: {
     icon: '/giraffe-logo-icon-v1.1.svg',
     apple: '/giraffe-logo-icon-v1.1.svg',

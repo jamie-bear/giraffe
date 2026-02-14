@@ -18,6 +18,11 @@ export const discoverParamsSchema = z.object({
   type: z.enum(['movie', 'tv']),
 });
 
+export const seasonParamsSchema = z.object({
+  tmdbId: z.coerce.number().int().positive(),
+  seasonNumber: z.coerce.number().int().min(1),
+});
+
 export const discoverQuerySchema = z.object({
   genre: z.coerce.number().int().positive().optional(),
   year: z.coerce.number().int().min(1900).max(2100).optional(),

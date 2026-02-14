@@ -6,6 +6,7 @@ import {
   trendingParamsSchema,
   discoverParamsSchema,
   discoverQuerySchema,
+  seasonParamsSchema,
 } from './metadata.schemas.js';
 import * as metadataService from './metadata.service.js';
 import type { ContentType } from '@giraffe/shared';
@@ -62,6 +63,18 @@ export async function metadataRoutes(app: FastifyInstance) {
       const { type } = request.params;
       const { genre, year, sort, page } = request.query;
       return metadataService.discoverContent(type as ContentType, { genre, year, sort, page });
+    },
+  );
+
+  typedApp.get(
+    '/tv/:tmdbId/season/:seasonNumber',
+    {
+      preHandler: [app.authenticate],
+      schema: { params: seasonParamsSchema },
+    },
+    async (request) => {
+      const { tmdbId, seasonNumber } = request.params;
+      return metadataService.getSeasonEpisodes(tmdbId, seasonNumber);
     },
   );
 }

@@ -30,6 +30,7 @@ export interface TorrentioSource {
   fileSize: number;      // bytes (parsed from title)
   seeders: number;
   title: string;         // raw title line for debugging
+  fileIdx?: number;      // file index within the torrent (from Torrentio)
 }
 
 const TORRENTIO_BASE = 'https://torrentio.strem.fun';
@@ -115,6 +116,7 @@ export async function searchTorrentio(
         fileSize: parseFileSize(stream.title),
         seeders: parseSeeders(stream.title),
         title: stream.title,
+        fileIdx: stream.fileIdx,
       }));
   } catch (err) {
     console.error('Torrentio fetch failed:', err);

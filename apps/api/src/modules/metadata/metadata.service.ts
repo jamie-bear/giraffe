@@ -263,3 +263,38 @@ export async function discoverContent(
   await setCache(cacheKey, response, 6 * 3600);
   return response;
 }
+
+export interface EpisodeSummary {
+  episodeNumber: number;
+  name: string;
+  overview: string;
+  airDate: string | null;
+  stillPath: string | null;
+  runtime: number | null;
+}
+
+export async function getSeasonEpisodes(
+  tmdbId: number,
+  seasonNumber: number,
+): Promise<{ seasonNumber: number; episodes: EpisodeSummary[] }> {
+  const cacheKey = `tmdb:season:${tmdbId}:${seasonNumber}`;
+  const cached = await getFromCache<{ seasonNumber: number; episodes: EpisodeSummary[] }>(cacheKey);
+  if (cached) return cached;
+
+  const data = await tmdb.getSeasonDetail(tmdbId, seasonNumber);
+
+  const result = {
+    seasonNumber: data.season_number,
+    episodes: data.episodes.map((ep) => ({
+      episodeNumber: ep.episode_number,
+      name: ep.name,
+      overview: ep.overview,
+      airDate: ep.air_date,
+      stillPath: ep.still_path,
+      runtime: ep.runtime,
+    })),
+  };
+
+  await setCache(cacheKey, result, 24 * 3600); // 24 hours
+  return result;
+}

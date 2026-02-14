@@ -1,8 +1,9 @@
 import type { ContentType } from '@giraffe/shared';
 import type { DebridProvider, DebridSource, ResolvedStreamResult } from './debrid.interface.js';
-import { ExternalServiceError } from '../../../utils/errors.js';
+import { ExternalServiceError, NotFoundError } from '../../../utils/errors.js';
 import { searchTorrentio } from '../torrentio.client.js';
 import { getExternalIds } from '../../metadata/tmdb.client.js';
+import { getRedis } from '../../../config/redis.js';
 
 const RD_BASE = 'https://api.real-debrid.com/rest/1.0';
 
@@ -80,22 +81,43 @@ export class RealDebridProvider implements DebridProvider {
     episode?: number,
   ): Promise<DebridSource[]> {
     // Step 1: Get IMDB ID from TMDB (Torrentio uses IMDB IDs)
-    const externalIds = await getExternalIds(type === 'movie' ? 'movie' : 'tv', tmdbId);
-    if (!externalIds.imdb_id) {
-      console.warn(`No IMDB ID found for TMDB ${type} ${tmdbId}`);
-      return [];
+    // Cache the IMDB ID mapping to avoid repeated TMDB lookups
+    const redis = getRedis();
+    const tmdbType = type === 'movie' ? 'movie' : 'tv';
+    const imdbCacheKey = `imdb:${tmdbType}:${tmdbId}`;
+    let imdbId: string | null = null;
+
+    const cachedImdbId = await redis.get(imdbCacheKey);
+    if (cachedImdbId) {
+      imdbId = cachedImdbId === '__none__' ? null : cachedImdbId;
+    } else {
+      const externalIds = await getExternalIds(tmdbType, tmdbId);
+      imdbId = externalIds.imdb_id;
+      // Cache for 7 days (IMDB IDs don't change). Use '__none__' sentinel for missing IDs.
+      await redis.set(imdbCacheKey, imdbId ?? '__none__', 'EX', 7 * 24 * 3600);
     }
 
-    // Step 2: Search Torrentio for available torrents
+    if (!imdbId) {
+      console.warn(`No IMDB ID found for TMDB ${type} ${tmdbId}`);
+      throw new NotFoundError(`No IMDB ID found for this title. It may be too new for torrent sources to be available.`);
+    }
+
+    // Step 2: Search Torrentio for available torrents (with one retry)
     const torrentioType = type === 'movie' ? 'movie' : 'series';
-    const torrents = await searchTorrentio(externalIds.imdb_id, torrentioType, season, episode);
+    let torrents = await searchTorrentio(imdbId, torrentioType, season, episode);
 
     if (torrents.length === 0) {
-      console.log(`No Torrentio results for ${externalIds.imdb_id}`);
+      // Single retry after a brief pause
+      await sleep(1000);
+      torrents = await searchTorrentio(imdbId, torrentioType, season, episode);
+    }
+
+    if (torrents.length === 0) {
+      console.log(`No Torrentio results for ${imdbId}`);
       return [];
     }
 
-    console.log(`Found ${torrents.length} Torrentio results for ${externalIds.imdb_id}`);
+    console.log(`Found ${torrents.length} Torrentio results for ${imdbId}`);
 
     // Step 3: Check which torrents are instantly available on Real-Debrid
     const hashes = torrents.map((t) => t.infoHash);
@@ -108,13 +130,21 @@ export class RealDebridProvider implements DebridProvider {
     }
 
     // Step 4: Convert to DebridSource format
-    return torrents.map((torrent) => ({
-      id: `magnet:?xt=urn:btih:${torrent.infoHash}`,
-      filename: torrent.filename,
-      fileSize: torrent.fileSize,
-      hash: torrent.infoHash,
-      cached: cacheStatus.get(torrent.infoHash) ?? false,
-    }));
+    // Encode fileIdx in the source ID so resolveSource can select the correct file
+    return torrents.map((torrent) => {
+      const magnetUri = `magnet:?xt=urn:btih:${torrent.infoHash}`;
+      const id = torrent.fileIdx != null
+        ? `${magnetUri}&fileIdx=${torrent.fileIdx}`
+        : magnetUri;
+      return {
+        id,
+        filename: torrent.filename,
+        fileSize: torrent.fileSize,
+        hash: torrent.infoHash,
+        cached: cacheStatus.get(torrent.infoHash) ?? false,
+        fileIdx: torrent.fileIdx,
+      };
+    });
   }
 
   /**
@@ -139,8 +169,17 @@ export class RealDebridProvider implements DebridProvider {
   }
 
   async resolveSource(magnetOrLink: string): Promise<ResolvedStreamResult> {
-    const magnet = this.buildMagnet(magnetOrLink);
-    console.log(`[RD] Resolving source, magnet hash: ${magnet.substring(0, 60)}...`);
+    // Extract fileIdx if encoded in the source ID (e.g. "magnet:...&fileIdx=3")
+    let fileIdx: number | undefined;
+    let cleanMagnet = magnetOrLink;
+    const fileIdxMatch = magnetOrLink.match(/[&?]fileIdx=(\d+)/);
+    if (fileIdxMatch) {
+      fileIdx = parseInt(fileIdxMatch[1], 10);
+      cleanMagnet = magnetOrLink.replace(/[&?]fileIdx=\d+/, '');
+    }
+
+    const magnet = this.buildMagnet(cleanMagnet);
+    console.log(`[RD] Resolving source, magnet hash: ${magnet.substring(0, 60)}...${fileIdx != null ? ` (fileIdx: ${fileIdx})` : ''}`);
 
     // Step 1: Add magnet link to Real-Debrid
     const addResult = await this.rdFetch<{ id: string; uri: string }>('/torrents/addMagnet', {
@@ -151,7 +190,7 @@ export class RealDebridProvider implements DebridProvider {
 
     console.log(`[RD] Torrent added, id: ${addResult.id}`);
 
-    // Step 2: Get torrent info to find the best video file
+    // Step 2: Get torrent info to find the correct video file
     interface RdFile {
       id: number;
       path: string;
@@ -167,18 +206,24 @@ export class RealDebridProvider implements DebridProvider {
 
     const torrentInfo = await this.rdFetch<RdTorrentInfo>(`/torrents/info/${addResult.id}`);
 
-    // Find the largest video file, or fall back to largest file
     const videoFiles = (torrentInfo.files ?? []).filter((f) => {
       const ext = f.path.substring(f.path.lastIndexOf('.')).toLowerCase();
       return VIDEO_EXTENSIONS.includes(ext);
     });
 
     let selectedFileId: string;
-    if (videoFiles.length > 0) {
-      // Select the largest video file
+
+    // If Torrentio gave us a fileIdx, use it to select the specific file
+    // (fileIdx is 0-based from Torrentio, RD file IDs are 1-based)
+    if (fileIdx != null && torrentInfo.files && torrentInfo.files.length > fileIdx) {
+      const targetFile = torrentInfo.files[fileIdx];
+      selectedFileId = String(targetFile.id);
+      console.log(`[RD] Using Torrentio fileIdx ${fileIdx} → RD file #${targetFile.id}: ${targetFile.path}`);
+    } else if (videoFiles.length > 0) {
+      // Fallback: select the largest video file
       const largest = videoFiles.reduce((a, b) => (a.bytes > b.bytes ? a : b));
       selectedFileId = String(largest.id);
-      console.log(`[RD] Selected video file #${largest.id}: ${largest.path} (${(largest.bytes / (1024*1024*1024)).toFixed(1)} GB)`);
+      console.log(`[RD] Selected largest video file #${largest.id}: ${largest.path} (${(largest.bytes / (1024*1024*1024)).toFixed(1)} GB)`);
     } else {
       // Fallback: select all files
       selectedFileId = 'all';

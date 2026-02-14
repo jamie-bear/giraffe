@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/hooks/use-auth';
+import { useAuth } from '@/lib/auth-context';
 import { Header } from '@/components/layout/header';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
