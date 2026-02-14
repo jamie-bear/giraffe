@@ -25,7 +25,7 @@
     "ioredis": "^5.4.0",
     "bcrypt": "^5.1.0",
     "zod": "^3.24.0",
-    "parse-torrent-title": "^0.7.0",
+    "parse-torrent-title": "^2.1.0",
     "fastify-plugin": "^5.0.0",
     "pino-pretty": "^13.0.0"
   },
