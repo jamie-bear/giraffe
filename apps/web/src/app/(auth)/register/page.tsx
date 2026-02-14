@@ -51,7 +51,6 @@ export default function RegisterPage() {
             required
             minLength={3}
             maxLength={50}
-            pattern="^[a-zA-Z0-9_\-]+$"
           />
           <Input
             id="password"
