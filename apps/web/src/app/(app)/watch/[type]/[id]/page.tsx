@@ -3,11 +3,11 @@
 import { use, useEffect, useState, useRef, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import Hls from 'hls.js';
+import { apiClient, getAccessToken } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { useProgressTracker } from '@/hooks/use-progress-tracker';
-import type { StreamSource, ResolvedStream, Content } from '@giraffe/shared';
+import type { StreamSource, TranscodeResult, Content } from '@giraffe/shared';
 
 interface PageProps {
   params: Promise<{ type: string; id: string }>;
@@ -24,8 +24,9 @@ export default function WatchPage({ params }: PageProps) {
   const [selectedSource, setSelectedSource] = useState<StreamSource | null>(null);
   const [contentId, setContentId] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
+  const [transcodeMode, setTranscodeMode] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  // Track which source indices have been tried and failed for auto-fallback
+  const hlsRef = useRef<Hls | null>(null);
   const triedSourceIdsRef = useRef<Set<string>>(new Set());
 
   // Fetch content detail to get the internal content ID
@@ -52,36 +53,113 @@ export default function WatchPage({ params }: PageProps) {
     },
   });
 
-  // Build a flat ordered list of all available sources
   const allSources = sources
     ? [sources.recommended, ...sources.alternatives].filter(
         (s): s is StreamSource => s != null,
       )
     : [];
 
-  // Resolve stream
-  const resolveMutation = useMutation({
+  // Cleanup HLS instance
+  const destroyHls = useCallback(() => {
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
+  }, []);
+
+  // Attach HLS.js to the video element for an m3u8 playlist URL
+  const attachHls = useCallback((playlistUrl: string) => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    destroyHls();
+
+    // Build the full URL from the API base
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+    const origin = apiBase.replace(/\/api\/v1$/, '');
+    const fullUrl = `${origin}${playlistUrl}`;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls({
+        xhrSetup: (xhr) => {
+          const token = getAccessToken();
+          if (token) {
+            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+          }
+          xhr.withCredentials = true;
+        },
+      });
+      hls.loadSource(fullUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls.recoverMediaError();
+              break;
+            default:
+              setVideoError(`HLS playback error: ${data.details}`);
+              autoFallback();
+              break;
+          }
+        }
+      });
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+      hlsRef.current = hls;
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS support
+      video.src = fullUrl;
+      video.play().catch(() => {});
+    } else {
+      setVideoError('Your browser does not support HLS playback.');
+    }
+  }, [destroyHls]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Transcode mutation — resolves source and starts transcode/remux/passthrough
+  const transcodeMutation = useMutation({
     mutationFn: (sourceId: string) =>
-      apiClient<ResolvedStream>('/stream/resolve', {
+      apiClient<TranscodeResult>('/transcode', {
         method: 'POST',
         body: JSON.stringify({ sourceId, tmdbId, contentType: type }),
       }),
     onSuccess: (data) => {
       setVideoError(null);
-      setStreamUrl(data.streamUrl);
+      setTranscodeMode(data.mode);
+
+      if (data.mode === 'passthrough' && data.streamUrl) {
+        destroyHls();
+        setStreamUrl(data.streamUrl);
+      } else if (data.playlistUrl) {
+        setStreamUrl(data.playlistUrl);
+        attachHls(data.playlistUrl);
+      }
+    },
+    onError: () => {
+      autoFallback();
     },
   });
 
   // Auto-resolve recommended source
   useEffect(() => {
-    if (sources?.recommended && !streamUrl && !resolveMutation.isPending) {
+    if (sources?.recommended && !streamUrl && !transcodeMutation.isPending) {
       setSelectedSource(sources.recommended);
-      resolveMutation.mutate(sources.recommended.id);
+      transcodeMutation.mutate(sources.recommended.id);
     }
   }, [sources]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fallback: when a video fails to play, try the next untried source
-  const tryNextSource = useCallback(() => {
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      destroyHls();
+    };
+  }, [destroyHls]);
+
+  const autoFallback = useCallback(() => {
     if (selectedSource) {
       triedSourceIdsRef.current.add(selectedSource.id);
     }
@@ -91,12 +169,13 @@ export default function WatchPage({ params }: PageProps) {
     if (next) {
       setVideoError(null);
       setStreamUrl(null);
+      destroyHls();
       setSelectedSource(next);
-      resolveMutation.mutate(next.id);
+      transcodeMutation.mutate(next.id);
     }
-  }, [allSources, selectedSource, resolveMutation]);
+  }, [allSources, selectedSource, transcodeMutation, destroyHls]);
 
-  // Handle <video> element errors (codec unsupported, network failure, etc.)
+  // Handle native <video> errors (for passthrough mode)
   const handleVideoError = useCallback(() => {
     const video = videoRef.current;
     const err = video?.error;
@@ -110,24 +189,22 @@ export default function WatchPage({ params }: PageProps) {
           message = 'A network error caused the download to fail.';
           break;
         case MediaError.MEDIA_ERR_DECODE:
-          message =
-            'The video format is not supported by your browser (likely H.265/HEVC in MKV).';
+          message = 'Video format is not supported by your browser.';
           break;
         case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-          message = 'The video format or MIME type is not supported by your browser.';
+          message = 'Video format or MIME type is not supported.';
           break;
       }
     }
     setVideoError(message);
 
-    // Auto-try the next source if available
     const hasUntried = allSources.some(
       (s) => !triedSourceIdsRef.current.has(s.id) && s.id !== selectedSource?.id,
     );
     if (hasUntried) {
-      tryNextSource();
+      autoFallback();
     }
-  }, [allSources, selectedSource, tryNextSource]);
+  }, [allSources, selectedSource, autoFallback]);
 
   // Progress tracking
   const { onTimeUpdate, onEnded } = useProgressTracker(
@@ -138,43 +215,54 @@ export default function WatchPage({ params }: PageProps) {
 
   const handleSourceSelect = (source: StreamSource) => {
     triedSourceIdsRef.current.clear();
+    destroyHls();
     setSelectedSource(source);
     setStreamUrl(null);
     setVideoError(null);
-    resolveMutation.mutate(source.id);
+    setTranscodeMode(null);
+    transcodeMutation.mutate(source.id);
   };
+
+  const showVideo = !!streamUrl && !videoError;
 
   return (
     <div>
       {/* Player Area */}
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
-        {streamUrl && !videoError ? (
-          <video
-            ref={videoRef}
-            src={streamUrl}
-            controls
-            autoPlay
-            playsInline
-            className="h-full w-full"
-            onTimeUpdate={(e) => {
-              const video = e.currentTarget;
-              onTimeUpdate(video.currentTime, video.duration);
-            }}
-            onEnded={(e) => {
-              const video = e.currentTarget;
-              onEnded(video.duration);
-            }}
-            onError={handleVideoError}
-          >
-            Your browser does not support the video tag.
-          </video>
+        {showVideo ? (
+          <>
+            <video
+              ref={videoRef}
+              src={transcodeMode === 'passthrough' ? streamUrl : undefined}
+              controls
+              autoPlay
+              playsInline
+              className="h-full w-full"
+              onTimeUpdate={(e) => {
+                const video = e.currentTarget;
+                onTimeUpdate(video.currentTime, video.duration);
+              }}
+              onEnded={(e) => {
+                const video = e.currentTarget;
+                onEnded(video.duration);
+              }}
+              onError={transcodeMode === 'passthrough' ? handleVideoError : undefined}
+            >
+              Your browser does not support the video tag.
+            </video>
+            {transcodeMode && transcodeMode !== 'passthrough' && (
+              <div className="absolute top-3 right-3 rounded bg-black/60 px-2 py-1 text-xs text-white/70">
+                {transcodeMode === 'remux' ? 'Remux' : 'Transcoding'}
+              </div>
+            )}
+          </>
         ) : (
           <div className="flex h-full items-center justify-center">
-            {sourcesLoading || resolveMutation.isPending ? (
+            {sourcesLoading || transcodeMutation.isPending ? (
               <div className="text-center">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
                 <p className="text-sm text-text-secondary">
-                  {sourcesLoading ? 'Finding sources...' : 'Resolving stream...'}
+                  {sourcesLoading ? 'Finding sources...' : 'Preparing stream...'}
                 </p>
               </div>
             ) : videoError ? (
@@ -193,24 +281,24 @@ export default function WatchPage({ params }: PageProps) {
                     variant="secondary"
                     size="sm"
                     onClick={() =>
-                      selectedSource && resolveMutation.mutate(selectedSource.id)
+                      selectedSource && transcodeMutation.mutate(selectedSource.id)
                     }
                   >
                     Retry
                   </Button>
                   {allSources.length > 1 && (
-                    <Button variant="secondary" size="sm" onClick={tryNextSource}>
+                    <Button variant="secondary" size="sm" onClick={autoFallback}>
                       Try Next Source
                     </Button>
                   )}
                 </div>
               </div>
-            ) : resolveMutation.isError ? (
+            ) : transcodeMutation.isError ? (
               <div className="text-center px-4">
                 <p className="text-sm text-error">
-                  {resolveMutation.error instanceof Error
-                    ? resolveMutation.error.message
-                    : 'Failed to resolve stream'}
+                  {transcodeMutation.error instanceof Error
+                    ? transcodeMutation.error.message
+                    : 'Failed to prepare stream'}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
                   Try selecting a different source below, or retry this one.
@@ -220,13 +308,13 @@ export default function WatchPage({ params }: PageProps) {
                     variant="secondary"
                     size="sm"
                     onClick={() =>
-                      selectedSource && resolveMutation.mutate(selectedSource.id)
+                      selectedSource && transcodeMutation.mutate(selectedSource.id)
                     }
                   >
                     Retry
                   </Button>
                   {allSources.length > 1 && (
-                    <Button variant="secondary" size="sm" onClick={tryNextSource}>
+                    <Button variant="secondary" size="sm" onClick={autoFallback}>
                       Try Next Source
                     </Button>
                   )}
