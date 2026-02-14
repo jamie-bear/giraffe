@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@giraffe/shared": "workspace:*",
+    "@giraffe/shared": "*",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

@@ -1,6 +1,10 @@
 {
   "name": "giraffe",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
@@ -18,7 +22,6 @@
     "@typescript-eslint/parser": "^8.20.0",
     "eslint": "^9.18.0"
   },
-  "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20.0.0"
   }
