@@ -100,6 +100,21 @@ export interface ResolvedStream {
   expiresAt: string;
 }
 
+export type TranscodeMode = 'passthrough' | 'remux' | 'transcode';
+
+export interface TranscodeResult {
+  mode: TranscodeMode;
+  streamUrl: string | null;
+  sessionId: string | null;
+  playlistUrl: string | null;
+  probe: {
+    videoCodec: string;
+    audioCodec: string;
+    container: string;
+    duration: number | null;
+  };
+}
+
 // --- Rating types ---
 export interface Rating {
   id: string;
@@ -225,16 +240,16 @@ export const SOURCE_SCORES: Record<string, number> = {
   Unknown: 0,
 };
 
-// Codec scores: H.264 is preferred because it is universally browser-playable.
-// H.265/HEVC may offer better compression but cannot be decoded by most browsers,
-// resulting in a grey/black player with metadata visible but no video frames.
+// Codec scores: with server-side transcoding, all codecs are playable.
+// Score by compression efficiency — better codecs produce smaller files at same quality.
+// H.264 gets a slight bonus since it can passthrough without any processing.
 export const CODEC_SCORES: Record<string, number> = {
-  'H.264': 10,
-  x264: 10,
-  AV1: 7,
-  'H.265': 5,
-  HEVC: 5,
-  x265: 5,
+  'H.265': 10,
+  HEVC: 10,
+  x265: 10,
+  AV1: 9,
+  'H.264': 8,
+  x264: 8,
   Unknown: 0,
 };
 
@@ -272,6 +287,12 @@ export const API_PATHS = {
     sources: (type: string, tmdbId: number) => `${V1}/stream/${type}/${tmdbId}/sources`,
     resolve: `${V1}/stream/resolve`,
     subtitles: (type: string, tmdbId: number) => `${V1}/stream/${type}/${tmdbId}/subtitles`,
+  },
+  transcode: {
+    start: `${V1}/transcode`,
+    playlist: (sessionId: string) => `${V1}/transcode/${sessionId}/playlist.m3u8`,
+    segment: (sessionId: string, segment: string) => `${V1}/transcode/${sessionId}/${segment}`,
+    delete: (sessionId: string) => `${V1}/transcode/${sessionId}`,
   },
   user: {
     profile: `${V1}/user/profile`,

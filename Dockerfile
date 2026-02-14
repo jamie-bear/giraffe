@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# Install build tools needed for native modules (bcrypt)
-RUN apk add --no-cache python3 make g++
+# Install build tools needed for native modules (bcrypt) and FFmpeg for transcoding
+RUN apk add --no-cache python3 make g++ ffmpeg
 
 WORKDIR /app
 
