@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(git -C \"S:\\\\Cloud Sync\\\\01 Jamie\\\\04 Projects\\\\04 Software Development\\\\Giraffe\\\\giraffe\" log --oneline --all)",
+      "WebFetch(domain:api.real-debrid.com)",
+      "WebFetch(domain:orm.drizzle.team)",
+      "Bash(pnpm install:*)",
+      "Bash(where pnpm)",
+      "Bash(where:*)",
+      "Bash(cmd /c \"where pnpm 2>nul & where npm 2>nul & where node 2>nul\")",
+      "Bash(cmd /c \"node --version 2>nul\")",
+      "Bash(cmd /c \"C:\\\\Program Files\\\\nodejs\\\\node.exe --version\")",
+      "Bash(cmd /c \"C:\\\\Users\\\\jamie\\\\AppData\\\\Roaming\\\\nvm\\\\current\\\\node.exe --version\")",
+      "Bash(cmd /c \"npm --version 2>nul && echo NPM_FOUND || echo NPM_NOT_FOUND\")",
+      "Bash(cmd /c \"node --version 2>&1\")",
+      "Bash(cmd /c \"where node 2>&1 & where npm 2>&1 & where pnpm 2>&1 & where bun 2>&1\")",
+      "Bash(git add:*)"
+    ]
+  }
+}
