@@ -172,4 +172,11 @@ export async function discover(
   return tmdbFetch<TmdbDiscoverResponse>(`/discover/${type}`, queryParams);
 }
 
+export async function getExternalIds(
+  type: 'movie' | 'tv',
+  tmdbId: number,
+): Promise<{ imdb_id: string | null }> {
+  return tmdbFetch<{ imdb_id: string | null }>(`/${type}/${tmdbId}/external_ids`);
+}
+
 export type { TmdbMovieDetail, TmdbTvDetail, TmdbSearchResponse, TmdbSearchResult };

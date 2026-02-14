@@ -1,6 +1,8 @@
 import type { ContentType } from '@giraffe/shared';
 import type { DebridProvider, DebridSource, ResolvedStreamResult } from './debrid.interface.js';
 import { ExternalServiceError } from '../../../utils/errors.js';
+import { searchTorrentio } from '../torrentio.client.js';
+import { getExternalIds } from '../../metadata/tmdb.client.js';
 
 const RD_BASE = 'https://api.real-debrid.com/rest/1.0';
 
@@ -33,21 +35,48 @@ export class RealDebridProvider implements DebridProvider {
   }
 
   async searchContent(
-    query: string,
-    _tmdbId: number,
-    _type: ContentType,
-    _season?: number,
-    _episode?: number,
+    _query: string,
+    tmdbId: number,
+    type: ContentType,
+    season?: number,
+    episode?: number,
   ): Promise<DebridSource[]> {
-    // Real-Debrid doesn't have a search API directly.
-    // In practice, you'd integrate with a torrent indexer/API (e.g., Torrentio, Jackett)
-    // to get magnet links, then check availability on Real-Debrid.
-    // For MVP, this returns an empty array — the streaming service will integrate
-    // with a torrent source provider that returns magnets, which are then checked here.
+    // Step 1: Get IMDB ID from TMDB (Torrentio uses IMDB IDs)
+    const externalIds = await getExternalIds(type === 'movie' ? 'movie' : 'tv', tmdbId);
+    if (!externalIds.imdb_id) {
+      console.warn(`No IMDB ID found for TMDB ${type} ${tmdbId}`);
+      return [];
+    }
 
-    // Placeholder: In a real implementation, this would query a torrent indexer
-    // and then check instant availability via Real-Debrid.
-    return [];
+    // Step 2: Search Torrentio for available torrents
+    const torrentioType = type === 'movie' ? 'movie' : 'series';
+    const torrents = await searchTorrentio(externalIds.imdb_id, torrentioType, season, episode);
+
+    if (torrents.length === 0) {
+      console.log(`No Torrentio results for ${externalIds.imdb_id}`);
+      return [];
+    }
+
+    console.log(`Found ${torrents.length} Torrentio results for ${externalIds.imdb_id}`);
+
+    // Step 3: Check which torrents are instantly available on Real-Debrid
+    const hashes = torrents.map((t) => t.infoHash);
+    let cacheStatus: Map<string, boolean>;
+    try {
+      cacheStatus = await this.checkCacheStatus(hashes);
+    } catch (err) {
+      console.error('RD cache check failed, marking all as uncached:', err);
+      cacheStatus = new Map();
+    }
+
+    // Step 4: Convert to DebridSource format
+    return torrents.map((torrent) => ({
+      id: `magnet:?xt=urn:btih:${torrent.infoHash}`,
+      filename: torrent.filename,
+      fileSize: torrent.fileSize,
+      hash: torrent.infoHash,
+      cached: cacheStatus.get(torrent.infoHash) ?? false,
+    }));
   }
 
   async resolveSource(magnetOrLink: string): Promise<ResolvedStreamResult> {
@@ -91,15 +120,20 @@ export class RealDebridProvider implements DebridProvider {
     if (hashes.length === 0) return result;
 
     // Real-Debrid instant availability endpoint accepts up to 200 hashes
-    const hashString = hashes.join('/');
-    const data = await this.rdFetch<Record<string, unknown>>(
-      `/torrents/instantAvailability/${hashString}`,
-    );
+    // Process in batches if needed
+    const batchSize = 100;
+    for (let i = 0; i < hashes.length; i += batchSize) {
+      const batch = hashes.slice(i, i + batchSize);
+      const hashString = batch.join('/');
+      const data = await this.rdFetch<Record<string, unknown>>(
+        `/torrents/instantAvailability/${hashString}`,
+      );
 
-    for (const hash of hashes) {
-      const entry = data[hash.toLowerCase()];
-      // If the hash key exists and has data, it's cached
-      result.set(hash, entry != null && typeof entry === 'object' && Object.keys(entry as object).length > 0);
+      for (const hash of batch) {
+        const entry = data[hash.toLowerCase()];
+        // If the hash key exists and has data, it's cached
+        result.set(hash, entry != null && typeof entry === 'object' && Object.keys(entry as object).length > 0);
+      }
     }
 
     return result;
