@@ -162,6 +162,54 @@ export async function getContinueWatching(userId: string): Promise<HistoryEntry[
   })) as HistoryEntry[];
 }
 
+export async function getProgress(
+  userId: string,
+  contentId: string,
+  seasonNumber?: number,
+  episodeNumber?: number,
+): Promise<WatchProgress | null> {
+  const conditions = [
+    eq(watchHistory.userId, userId),
+    eq(watchHistory.contentId, contentId),
+  ];
+
+  if (seasonNumber != null) {
+    conditions.push(eq(watchHistory.seasonNumber, seasonNumber));
+  } else {
+    conditions.push(isNull(watchHistory.seasonNumber));
+  }
+
+  if (episodeNumber != null) {
+    conditions.push(eq(watchHistory.episodeNumber, episodeNumber));
+  } else {
+    conditions.push(isNull(watchHistory.episodeNumber));
+  }
+
+  const [existing] = await db
+    .select()
+    .from(watchHistory)
+    .where(and(...conditions))
+    .limit(1);
+
+  if (!existing) return null;
+
+  const progressPercent =
+    existing.durationSeconds && existing.durationSeconds > 0
+      ? Math.round((existing.progressSeconds / existing.durationSeconds) * 100)
+      : 0;
+
+  return {
+    id: existing.id,
+    contentId: existing.contentId,
+    seasonNumber: existing.seasonNumber,
+    episodeNumber: existing.episodeNumber,
+    progressSeconds: existing.progressSeconds,
+    durationSeconds: existing.durationSeconds,
+    completed: existing.completed,
+    progressPercent,
+  };
+}
+
 export async function deleteHistoryEntry(userId: string, entryId: string): Promise<void> {
   const [existing] = await db
     .select({ userId: watchHistory.userId })

@@ -7,7 +7,7 @@ import Hls from 'hls.js';
 import { apiClient, getAccessToken } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { useProgressTracker } from '@/hooks/use-progress-tracker';
-import type { StreamSource, TranscodeResult, Content } from '@giraffe/shared';
+import type { StreamSource, TranscodeResult, Content, WatchProgress } from '@giraffe/shared';
 
 interface PageProps {
   params: Promise<{ type: string; id: string }>;
@@ -25,9 +25,11 @@ export default function WatchPage({ params }: PageProps) {
   const [contentId, setContentId] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [transcodeMode, setTranscodeMode] = useState<string | null>(null);
+  const [resumeMessage, setResumeMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const triedSourceIdsRef = useRef<Set<string>>(new Set());
+  const pendingSeekRef = useRef<number | null>(null);
 
   // Fetch content detail to get the internal content ID
   const { data: content } = useQuery({
@@ -38,6 +40,28 @@ export default function WatchPage({ params }: PageProps) {
   useEffect(() => {
     if (content?.id) setContentId(content.id);
   }, [content]);
+
+  // Fetch saved progress for resume
+  const { data: savedProgress } = useQuery({
+    queryKey: ['watch-progress', contentId, season, episode],
+    queryFn: () => {
+      const qp = new URLSearchParams();
+      if (season) qp.set('season', String(season));
+      if (episode) qp.set('episode', String(episode));
+      const qs = qp.toString();
+      return apiClient<WatchProgress | null>(
+        `/history/progress/${contentId}${qs ? `?${qs}` : ''}`,
+      );
+    },
+    enabled: !!contentId,
+  });
+
+  // Set pending seek when saved progress is available
+  useEffect(() => {
+    if (savedProgress && !savedProgress.completed && savedProgress.progressSeconds > 0) {
+      pendingSeekRef.current = savedProgress.progressSeconds;
+    }
+  }, [savedProgress]);
 
   // Fetch sources
   const { data: sources, isLoading: sourcesLoading, error: sourcesError } = useQuery({
@@ -108,6 +132,14 @@ export default function WatchPage({ params }: PageProps) {
         }
       });
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (pendingSeekRef.current != null) {
+          video.currentTime = pendingSeekRef.current;
+          const mins = Math.floor(pendingSeekRef.current / 60);
+          const secs = Math.floor(pendingSeekRef.current % 60);
+          setResumeMessage(`Resuming from ${mins}:${secs.toString().padStart(2, '0')}`);
+          setTimeout(() => setResumeMessage(null), 3000);
+          pendingSeekRef.current = null;
+        }
         video.play().catch(() => {});
       });
       hlsRef.current = hls;
@@ -246,6 +278,19 @@ export default function WatchPage({ params }: PageProps) {
                 const video = e.currentTarget;
                 onEnded(video.duration);
               }}
+              onLoadedData={() => {
+                const vid = videoRef.current;
+                if (vid && pendingSeekRef.current != null) {
+                  vid.currentTime = pendingSeekRef.current;
+                  const mins = Math.floor(pendingSeekRef.current / 60);
+                  const secs = Math.floor(pendingSeekRef.current % 60);
+                  setResumeMessage(
+                    `Resuming from ${mins}:${secs.toString().padStart(2, '0')}`,
+                  );
+                  setTimeout(() => setResumeMessage(null), 3000);
+                  pendingSeekRef.current = null;
+                }
+              }}
               onError={transcodeMode === 'passthrough' ? handleVideoError : undefined}
             >
               Your browser does not support the video tag.
@@ -253,6 +298,11 @@ export default function WatchPage({ params }: PageProps) {
             {transcodeMode && transcodeMode !== 'passthrough' && (
               <div className="absolute top-3 right-3 rounded bg-black/60 px-2 py-1 text-xs text-white/70">
                 {transcodeMode === 'remux' ? 'Remux' : 'Transcoding'}
+              </div>
+            )}
+            {resumeMessage && (
+              <div className="absolute bottom-16 left-1/2 -translate-x-1/2 rounded bg-black/80 px-4 py-2 text-sm text-white">
+                {resumeMessage}
               </div>
             )}
           </>

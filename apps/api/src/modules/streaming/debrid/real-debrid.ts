@@ -6,6 +6,7 @@ import { getExternalIds } from '../../metadata/tmdb.client.js';
 import { getRedis } from '../../../config/redis.js';
 
 const RD_BASE = 'https://api.real-debrid.com/rest/1.0';
+const RD_CACHE_TTL = 12 * 3600; // 12 hours
 
 // Common trackers to append to bare magnet links — improves reliability
 const TRACKERS = [
@@ -127,6 +128,13 @@ export class RealDebridProvider implements DebridProvider {
     } catch (err) {
       console.error('RD cache check failed, marking all as uncached:', err);
       cacheStatus = new Map();
+    }
+
+    // Layer 3: Use Torrentio cache hints for hashes still marked uncached
+    for (const torrent of torrents) {
+      if (!cacheStatus.get(torrent.infoHash) && torrent.cached) {
+        cacheStatus.set(torrent.infoHash, true);
+      }
     }
 
     // Step 4: Convert to DebridSource format
@@ -288,6 +296,13 @@ export class RealDebridProvider implements DebridProvider {
 
     console.log(`[RD] Stream URL obtained: ${unrestricted.download.substring(0, 60)}... (streamable: ${unrestricted.streamable})`);
 
+    // Record this hash as cached for future lookups
+    const hashMatch = cleanMagnet.match(/btih:([a-fA-F0-9]+)/i);
+    if (hashMatch) {
+      const redis = getRedis();
+      await redis.set(`rd:cache:${hashMatch[1].toLowerCase()}`, '1', 'EX', RD_CACHE_TTL);
+    }
+
     return {
       streamUrl: unrestricted.download,
       expiresAt: new Date(Date.now() + 6 * 60 * 60 * 1000), // ~6 hours
@@ -299,20 +314,54 @@ export class RealDebridProvider implements DebridProvider {
 
     if (hashes.length === 0) return result;
 
-    // Real-Debrid instant availability endpoint accepts up to 200 hashes
-    // Process in batches if needed
-    const batchSize = 100;
-    for (let i = 0; i < hashes.length; i += batchSize) {
-      const batch = hashes.slice(i, i + batchSize);
-      const hashString = batch.join('/');
-      const data = await this.rdFetch<Record<string, unknown>>(
-        `/torrents/instantAvailability/${hashString}`,
-      );
+    const redis = getRedis();
 
-      for (const hash of batch) {
-        const entry = data[hash.toLowerCase()];
-        // If the hash key exists and has data, it's cached
-        result.set(hash, entry != null && typeof entry === 'object' && Object.keys(entry as object).length > 0);
+    // Layer 1: Check our local Redis cache of known-good hashes
+    for (const hash of hashes) {
+      const cached = await redis.get(`rd:cache:${hash.toLowerCase()}`);
+      if (cached === '1') {
+        result.set(hash, true);
+      }
+    }
+
+    // Layer 2: Try the RD instant availability API (may be deprecated)
+    const uncheckedHashes = hashes.filter((h) => !result.has(h));
+    if (uncheckedHashes.length > 0) {
+      try {
+        const batchSize = 100;
+        for (let i = 0; i < uncheckedHashes.length; i += batchSize) {
+          const batch = uncheckedHashes.slice(i, i + batchSize);
+          const hashString = batch.join('/');
+          const data = await this.rdFetch<Record<string, unknown>>(
+            `/torrents/instantAvailability/${hashString}`,
+          );
+
+          for (const hash of batch) {
+            const entry = data[hash.toLowerCase()];
+            const isCached =
+              entry != null &&
+              typeof entry === 'object' &&
+              Object.keys(entry as object).length > 0;
+            result.set(hash, isCached);
+            // Backfill our local cache for positive hits
+            if (isCached) {
+              await redis.set(`rd:cache:${hash.toLowerCase()}`, '1', 'EX', RD_CACHE_TTL);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(
+          '[RD] instantAvailability API failed (possibly deprecated), using fallback:',
+          (err as Error).message,
+        );
+        // Don't throw — hashes not in result Map will get Torrentio hints or default to uncached
+      }
+    }
+
+    // Any hash still not in the result map defaults to false
+    for (const hash of hashes) {
+      if (!result.has(hash)) {
+        result.set(hash, false);
       }
     }
 

@@ -28,6 +28,7 @@ export const API_PATHS = {
   },
   history: {
     progress: `${V1}/history/progress`,
+    progressLookup: (contentId: string) => `${V1}/history/progress/${contentId}`,
     list: `${V1}/history`,
     continue: `${V1}/history/continue`,
     delete: (id: string) => `${V1}/history/${id}`,
