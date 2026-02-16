@@ -16,3 +16,12 @@ export const historyQuerySchema = z.object({
 export const historyIdParamsSchema = z.object({
   id: z.string().uuid(),
 });
+
+export const progressLookupParamsSchema = z.object({
+  contentId: z.string().uuid(),
+});
+
+export const progressLookupQuerySchema = z.object({
+  season: z.coerce.number().int().positive().optional(),
+  episode: z.coerce.number().int().positive().optional(),
+});

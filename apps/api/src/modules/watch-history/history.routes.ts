@@ -1,6 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
-import { progressBodySchema, historyQuerySchema, historyIdParamsSchema } from './history.schemas.js';
+import {
+  progressBodySchema,
+  progressLookupParamsSchema,
+  progressLookupQuerySchema,
+  historyQuerySchema,
+  historyIdParamsSchema,
+} from './history.schemas.js';
 import * as historyService from './history.service.js';
 
 export async function historyRoutes(app: FastifyInstance) {
@@ -13,6 +19,21 @@ export async function historyRoutes(app: FastifyInstance) {
     { schema: { body: progressBodySchema } },
     async (request) => {
       return historyService.updateProgress(request.user.sub, request.body);
+    },
+  );
+
+  typedApp.get(
+    '/progress/:contentId',
+    {
+      schema: {
+        params: progressLookupParamsSchema,
+        querystring: progressLookupQuerySchema,
+      },
+    },
+    async (request) => {
+      const { contentId } = request.params;
+      const { season, episode } = request.query;
+      return historyService.getProgress(request.user.sub, contentId, season, episode);
     },
   );
 

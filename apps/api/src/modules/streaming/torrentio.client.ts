@@ -31,6 +31,7 @@ export interface TorrentioSource {
   seeders: number;
   title: string;         // raw title line for debugging
   fileIdx?: number;      // file index within the torrent (from Torrentio)
+  cached: boolean;       // parsed from Torrentio name/title cache markers (⚡, [RD+])
 }
 
 const TORRENTIO_BASE = 'https://torrentio.strem.fun';
@@ -57,6 +58,14 @@ function parseFileSize(title: string): number {
 function parseSeeders(title: string): number {
   const match = title.match(/👤\s*(\d+)/);
   return match ? parseInt(match[1], 10) : 0;
+}
+
+/**
+ * Parse cache status from Torrentio stream metadata.
+ * Torrentio marks cached debrid sources with ⚡ in the name or [RD+] in the title.
+ */
+function parseCacheStatus(name: string, title: string): boolean {
+  return name.includes('⚡') || title.includes('[RD+]') || title.includes('⚡');
 }
 
 /**
@@ -117,6 +126,7 @@ export async function searchTorrentio(
         seeders: parseSeeders(stream.title),
         title: stream.title,
         fileIdx: stream.fileIdx,
+        cached: parseCacheStatus(stream.name, stream.title),
       }));
   } catch (err) {
     console.error('Torrentio fetch failed:', err);
