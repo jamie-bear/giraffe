@@ -37,6 +37,13 @@ export async function authRoutes(app: FastifyInstance) {
       },
     },
     async (request, reply) => {
+      // Registration is temporarily disabled
+      return reply.code(403).send({
+        error: 'Forbidden',
+        message: 'New signups are currently disabled.',
+        statusCode: 403,
+      });
+
       const { email, username, password } = request.body;
       const user = await registerUser(email, username, password);
       const accessToken = app.jwt.sign({ sub: user.id, username: user.username });
