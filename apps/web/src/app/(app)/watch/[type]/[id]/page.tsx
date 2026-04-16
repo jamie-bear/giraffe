@@ -28,6 +28,7 @@ export default function WatchPage({ params }: PageProps) {
   const [resumeMessage, setResumeMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const hlsRecoveryAttemptsRef = useRef(0);
   const triedSourceIdsRef = useRef<Set<string>>(new Set());
   const pendingSeekRef = useRef<number | null>(null);
 
@@ -49,9 +50,7 @@ export default function WatchPage({ params }: PageProps) {
       if (season) qp.set('season', String(season));
       if (episode) qp.set('episode', String(episode));
       const qs = qp.toString();
-      return apiClient<WatchProgress | null>(
-        `/history/progress/${contentId}${qs ? `?${qs}` : ''}`,
-      );
+      return apiClient<WatchProgress | null>(`/history/progress/${contentId}${qs ? `?${qs}` : ''}`);
     },
     enabled: !!contentId,
   });
@@ -64,7 +63,11 @@ export default function WatchPage({ params }: PageProps) {
   }, [savedProgress]);
 
   // Fetch sources
-  const { data: sources, isLoading: sourcesLoading, error: sourcesError } = useQuery({
+  const {
+    data: sources,
+    isLoading: sourcesLoading,
+    error: sourcesError,
+  } = useQuery({
     queryKey: ['stream', 'sources', type, tmdbId, season, episode],
     queryFn: () => {
       const params = new URLSearchParams();
@@ -78,9 +81,7 @@ export default function WatchPage({ params }: PageProps) {
   });
 
   const allSources = sources
-    ? [sources.recommended, ...sources.alternatives].filter(
-        (s): s is StreamSource => s != null,
-      )
+    ? [sources.recommended, ...sources.alternatives].filter((s): s is StreamSource => s != null)
     : [];
 
   // Cleanup HLS instance
@@ -92,65 +93,82 @@ export default function WatchPage({ params }: PageProps) {
   }, []);
 
   // Attach HLS.js to the video element for an m3u8 playlist URL
-  const attachHls = useCallback((playlistUrl: string) => {
-    const video = videoRef.current;
-    if (!video) return;
+  const attachHls = useCallback(
+    (playlistUrl: string) => {
+      const video = videoRef.current;
+      if (!video) return;
 
-    destroyHls();
+      destroyHls();
+      hlsRecoveryAttemptsRef.current = 0;
 
-    // Build the full URL from the API base
-    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
-    const origin = apiBase.replace(/\/api\/v1$/, '');
-    const fullUrl = `${origin}${playlistUrl}`;
+      // Build the full URL from the API base
+      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api/v1';
+      const origin = apiBase.replace(/\/api\/v1$/, '');
+      const fullUrl = `${origin}${playlistUrl}`;
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        xhrSetup: (xhr) => {
-          const token = getAccessToken();
-          if (token) {
-            xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      if (Hls.isSupported()) {
+        const hls = new Hls({
+          xhrSetup: (xhr) => {
+            const token = getAccessToken();
+            if (token) {
+              xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            }
+            xhr.withCredentials = true;
+          },
+        });
+        hls.loadSource(fullUrl);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            hlsRecoveryAttemptsRef.current += 1;
+            const tooManyRecoveries = hlsRecoveryAttemptsRef.current > 3;
+
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                if (!tooManyRecoveries) {
+                  hls.startLoad();
+                  return;
+                }
+                setVideoError('Stream connection is unstable. Trying another source...');
+                autoFallback();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                if (!tooManyRecoveries) {
+                  hls.recoverMediaError();
+                  return;
+                }
+                setVideoError('This source failed to decode reliably. Trying another source...');
+                autoFallback();
+                break;
+              default:
+                setVideoError(`HLS playback error: ${data.details}`);
+                autoFallback();
+                break;
+            }
           }
-          xhr.withCredentials = true;
-        },
-      });
-      hls.loadSource(fullUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError();
-              break;
-            default:
-              setVideoError(`HLS playback error: ${data.details}`);
-              autoFallback();
-              break;
+        });
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (pendingSeekRef.current != null) {
+            video.currentTime = pendingSeekRef.current;
+            const mins = Math.floor(pendingSeekRef.current / 60);
+            const secs = Math.floor(pendingSeekRef.current % 60);
+            setResumeMessage(`Resuming from ${mins}:${secs.toString().padStart(2, '0')}`);
+            setTimeout(() => setResumeMessage(null), 3000);
+            pendingSeekRef.current = null;
           }
-        }
-      });
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (pendingSeekRef.current != null) {
-          video.currentTime = pendingSeekRef.current;
-          const mins = Math.floor(pendingSeekRef.current / 60);
-          const secs = Math.floor(pendingSeekRef.current % 60);
-          setResumeMessage(`Resuming from ${mins}:${secs.toString().padStart(2, '0')}`);
-          setTimeout(() => setResumeMessage(null), 3000);
-          pendingSeekRef.current = null;
-        }
+          video.play().catch(() => {});
+        });
+        hlsRef.current = hls;
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari native HLS support
+        video.src = fullUrl;
         video.play().catch(() => {});
-      });
-      hlsRef.current = hls;
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS support
-      video.src = fullUrl;
-      video.play().catch(() => {});
-    } else {
-      setVideoError('Your browser does not support HLS playback.');
-    }
-  }, [destroyHls]); // eslint-disable-line react-hooks/exhaustive-deps
+      } else {
+        setVideoError('Your browser does not support HLS playback.');
+      }
+    },
+    [destroyHls],
+  ); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Transcode mutation — resolves source and starts transcode/remux/passthrough
   const transcodeMutation = useMutation({
@@ -192,6 +210,8 @@ export default function WatchPage({ params }: PageProps) {
   }, [destroyHls]);
 
   const autoFallback = useCallback(() => {
+    if (transcodeMutation.isPending) return;
+
     if (selectedSource) {
       triedSourceIdsRef.current.add(selectedSource.id);
     }
@@ -204,6 +224,8 @@ export default function WatchPage({ params }: PageProps) {
       destroyHls();
       setSelectedSource(next);
       transcodeMutation.mutate(next.id);
+    } else {
+      setVideoError('All sources failed during playback. Try another title or retry later.');
     }
   }, [allSources, selectedSource, transcodeMutation, destroyHls]);
 
@@ -239,11 +261,7 @@ export default function WatchPage({ params }: PageProps) {
   }, [allSources, selectedSource, autoFallback]);
 
   // Progress tracking
-  const { onTimeUpdate, onEnded } = useProgressTracker(
-    contentId ?? '',
-    season,
-    episode,
-  );
+  const { onTimeUpdate, onEnded } = useProgressTracker(contentId ?? '', season, episode);
 
   const handleSourceSelect = (source: StreamSource) => {
     triedSourceIdsRef.current.clear();
@@ -284,9 +302,7 @@ export default function WatchPage({ params }: PageProps) {
                   vid.currentTime = pendingSeekRef.current;
                   const mins = Math.floor(pendingSeekRef.current / 60);
                   const secs = Math.floor(pendingSeekRef.current % 60);
-                  setResumeMessage(
-                    `Resuming from ${mins}:${secs.toString().padStart(2, '0')}`,
-                  );
+                  setResumeMessage(`Resuming from ${mins}:${secs.toString().padStart(2, '0')}`);
                   setTimeout(() => setResumeMessage(null), 3000);
                   pendingSeekRef.current = null;
                 }
@@ -320,8 +336,7 @@ export default function WatchPage({ params }: PageProps) {
                 <p className="text-sm text-error">{videoError}</p>
                 <p className="mt-1 text-xs text-text-muted">
                   {allSources.some(
-                    (s) =>
-                      !triedSourceIdsRef.current.has(s.id) && s.id !== selectedSource?.id,
+                    (s) => !triedSourceIdsRef.current.has(s.id) && s.id !== selectedSource?.id,
                   )
                     ? 'Trying next source...'
                     : 'All sources have been tried. Try selecting a different source below.'}
@@ -330,9 +345,7 @@ export default function WatchPage({ params }: PageProps) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() =>
-                      selectedSource && transcodeMutation.mutate(selectedSource.id)
-                    }
+                    onClick={() => selectedSource && transcodeMutation.mutate(selectedSource.id)}
                   >
                     Retry
                   </Button>
@@ -357,9 +370,7 @@ export default function WatchPage({ params }: PageProps) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onClick={() =>
-                      selectedSource && transcodeMutation.mutate(selectedSource.id)
-                    }
+                    onClick={() => selectedSource && transcodeMutation.mutate(selectedSource.id)}
                   >
                     Retry
                   </Button>
@@ -373,9 +384,7 @@ export default function WatchPage({ params }: PageProps) {
             ) : sourcesError ? (
               <div className="text-center">
                 <p className="text-sm text-error">
-                  {sourcesError instanceof Error
-                    ? sourcesError.message
-                    : 'Failed to load sources'}
+                  {sourcesError instanceof Error ? sourcesError.message : 'Failed to load sources'}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
                   Check Settings to verify your debrid API key.
@@ -383,8 +392,7 @@ export default function WatchPage({ params }: PageProps) {
               </div>
             ) : (
               <p className="text-sm text-text-secondary">
-                No sources available. Make sure your debrid API key is configured in
-                Settings.
+                No sources available. Make sure your debrid API key is configured in Settings.
               </p>
             )}
           </div>
@@ -406,9 +414,7 @@ export default function WatchPage({ params }: PageProps) {
       {/* Source Selector */}
       {sources && (sources.recommended || sources.alternatives.length > 0) && (
         <div className="mt-6">
-          <h2 className="mb-3 text-sm font-semibold text-text-secondary">
-            Available Sources
-          </h2>
+          <h2 className="mb-3 text-sm font-semibold text-text-secondary">Available Sources</h2>
           <div className="space-y-2">
             {allSources.map((source) => (
               <button
@@ -426,18 +432,12 @@ export default function WatchPage({ params }: PageProps) {
                     <span>{source.quality}</span>
                     <span>{source.sourceType}</span>
                     <span>{source.codec}</span>
-                    <span>
-                      {(source.fileSize / (1024 * 1024 * 1024)).toFixed(1)} GB
-                    </span>
+                    <span>{(source.fileSize / (1024 * 1024 * 1024)).toFixed(1)} GB</span>
                   </div>
                 </div>
                 <div className="ml-3 flex flex-col items-end">
-                  <span className="text-xs font-medium text-accent">
-                    Score: {source.score}
-                  </span>
-                  {source.cached && (
-                    <span className="mt-0.5 text-xs text-success">Cached</span>
-                  )}
+                  <span className="text-xs font-medium text-accent">Score: {source.score}</span>
+                  {source.cached && <span className="mt-0.5 text-xs text-success">Cached</span>}
                 </div>
               </button>
             ))}
