@@ -36,14 +36,14 @@ services:
       APP_HOST: 0.0.0.0
       APP_PORT: 3001
       NODE_ENV: production
-      CORS_ORIGIN: http://localhost:3000
+      CORS_ORIGIN: http://localhost:7670
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      - "7671:3001"
 
   web:
     build:
@@ -52,12 +52,12 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_URL: http://localhost:3001/api/v1
+      NEXT_PUBLIC_API_URL: http://localhost:7671/api/v1
       PORT: 3000
     depends_on:
       - api
     ports:
-      - "3000:3000"
+      - "7670:3000"
 
 volumes:
   pgdata:
