@@ -34,7 +34,9 @@ async function getDebridProvider(userId: string): Promise<DebridProvider> {
     apiKey = decrypt(user.debridApiKeyEncrypted);
   } catch (err) {
     console.error('Failed to decrypt debrid API key:', err);
-    throw new ValidationError('Debrid API key is corrupted. Please remove and re-add it in Settings.');
+    throw new ValidationError(
+      'Debrid API key is corrupted. Please remove and re-add it in Settings.',
+    );
   }
 
   switch (user.debridProvider) {
@@ -51,6 +53,10 @@ export async function getStreamSources(
   season?: number,
   episode?: number,
 ): Promise<{ recommended: StreamSource | null; alternatives: StreamSource[] }> {
+  if (type === 'tv' && (season == null || episode == null)) {
+    throw new ValidationError('Season and episode are required for TV stream sources.');
+  }
+
   const redis = getRedis();
   // Cache is scoped to userId because debrid cache status is account-specific
   const cacheKey = `stream:sources:${cacheHash(userId)}:${type}:${tmdbId}:${season ?? ''}:${episode ?? ''}`;
@@ -103,16 +109,18 @@ export async function getStreamSources(
   return result;
 }
 
-export async function resolveStream(
-  userId: string,
-  sourceId: string,
-): Promise<ResolvedStream> {
+export async function resolveStream(userId: string, sourceId: string): Promise<ResolvedStream> {
   const redis = getRedis();
-  const cacheKey = `stream:url:${cacheHash(sourceId)}`;
+  const cacheKey = `stream:url:${cacheHash(userId)}:${cacheHash(sourceId)}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {
-    return JSON.parse(cached);
+    const parsed = JSON.parse(cached) as ResolvedStream;
+    const expiresAtTs = Date.parse(parsed.expiresAt);
+    // Ignore stale/near-expiry cached entries to avoid playback failures.
+    if (Number.isFinite(expiresAtTs) && expiresAtTs - Date.now() > 60_000) {
+      return parsed;
+    }
   }
 
   const provider = await getDebridProvider(userId);
@@ -123,7 +131,11 @@ export async function resolveStream(
     expiresAt: resolved.expiresAt.toISOString(),
   };
 
-  await redis.set(cacheKey, JSON.stringify(result), 'EX', 2 * 3600); // 2 hours
+  const ttlSeconds = Math.max(
+    60,
+    Math.floor((resolved.expiresAt.getTime() - Date.now()) / 1000) - 60, // 60s safety margin
+  );
+  await redis.set(cacheKey, JSON.stringify(result), 'EX', ttlSeconds);
   return result;
 }
 
