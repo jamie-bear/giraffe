@@ -43,13 +43,10 @@ export default function LoginPage() {
             className="mx-auto mb-8 h-28 w-28 drop-shadow-lg"
           />
           <h1 className="font-heading text-5xl text-text">Giraffe</h1>
-          <p className="mt-3 text-lg tracking-widest text-accent uppercase">
-            See Everything.
-          </p>
+          <p className="mt-3 text-lg tracking-widest text-accent uppercase">See Everything.</p>
           <div className="mx-auto mt-10 h-px w-24 bg-border" />
           <p className="mt-6 max-w-xs mx-auto text-sm leading-relaxed text-text-muted">
-            Your personal media center. Stream movies and TV shows from your
-            library, anywhere.
+            Your personal media center. Stream movies and TV shows from your library, anywhere.
           </p>
         </div>
       </div>
@@ -60,22 +57,14 @@ export default function LoginPage() {
           {/* Mobile-only branding */}
           <div className="mb-10 flex flex-col items-center lg:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/giraffe-logo-icon-v1.1.svg"
-              alt="Giraffe"
-              className="mb-4 h-16 w-16"
-            />
+            <img src="/giraffe-logo-icon-v1.1.svg" alt="Giraffe" className="mb-4 h-16 w-16" />
             <h1 className="font-heading text-3xl text-text">Giraffe</h1>
-            <p className="mt-1 text-xs tracking-widest text-accent uppercase">
-              See Everything.
-            </p>
+            <p className="mt-1 text-xs tracking-widest text-accent uppercase">See Everything.</p>
           </div>
 
           <div className="mb-8">
             <h2 className="font-heading text-2xl text-text">Welcome back</h2>
-            <p className="mt-1 text-sm text-text-muted">
-              Sign in to continue to your library
-            </p>
+            <p className="mt-1 text-sm text-text-muted">Sign in to continue to your library</p>
           </div>
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -83,6 +72,7 @@ export default function LoginPage() {
               id="email"
               label="Email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
@@ -92,6 +82,7 @@ export default function LoginPage() {
               id="password"
               label="Password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Your password"
