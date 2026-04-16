@@ -15,7 +15,9 @@ const envSchema = z.object({
   APP_PORT: z.coerce.number().default(3001),
   APP_HOST: z.string().default('0.0.0.0'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
-  CORS_ORIGIN: z.string().default('http://localhost:3000'),
+  // Comma-separated list of allowed origins. Supports "*" wildcards, e.g.:
+  // "http://localhost:3000,https://*.vercel.app"
+  CORS_ORIGIN: z.string().default('http://localhost:3000,https://*.vercel.app'),
 });
 
 const parsed = envSchema.parse(process.env);
