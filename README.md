@@ -39,6 +39,13 @@ Giraffe is deployed and run primarily through Docker Compose.
 - `postgres`
 - `redis`
 
+## Port exposure defaults
+
+- Exposed to host: `web` on `3000`, `api` on `3001`
+- Internal-only (Compose network): `postgres` (`5432`), `redis` (`6379`)
+
+This avoids common host port conflicts (for example if local Redis already uses `6379`).
+
 ## Notes
 
 - `docker-compose.yml` is the source of truth for local and production-like deployment.
