@@ -15,7 +15,7 @@ import { users } from '../../db/schema/users.js';
 
 const REFRESH_COOKIE = 'refreshToken';
 
-// In production with cross-origin (e.g. Vercel frontend → Railway API),
+// In production with cross-origin front-end/API deployments,
 // cookies must use sameSite: 'none' + secure: true to be sent cross-origin.
 const isProduction = config.NODE_ENV === 'production';
 const REFRESH_COOKIE_OPTIONS = {
@@ -76,7 +76,9 @@ export async function authRoutes(app: FastifyInstance) {
     try {
       const oldToken = request.cookies?.[REFRESH_COOKIE];
       if (!oldToken) {
-        return reply.code(401).send({ error: 'Unauthorized', message: 'No refresh token', statusCode: 401 });
+        return reply
+          .code(401)
+          .send({ error: 'Unauthorized', message: 'No refresh token', statusCode: 401 });
       }
 
       const { userId, newToken } = await rotateRefreshToken(oldToken);
@@ -95,20 +97,18 @@ export async function authRoutes(app: FastifyInstance) {
     } catch (err) {
       // Log the actual error for debugging, return 401 to client
       app.log.error(err, 'Token refresh failed');
-      return reply.code(401).send({ error: 'Unauthorized', message: 'Token refresh failed', statusCode: 401 });
+      return reply
+        .code(401)
+        .send({ error: 'Unauthorized', message: 'Token refresh failed', statusCode: 401 });
     }
   });
 
-  typedApp.post(
-    '/logout',
-    { preHandler: [app.authenticate] },
-    async (request, reply) => {
-      const token = request.cookies[REFRESH_COOKIE];
-      if (token) {
-        await revokeRefreshToken(token);
-      }
-      reply.clearCookie(REFRESH_COOKIE, { path: '/' });
-      return { message: 'Logged out' };
-    },
-  );
+  typedApp.post('/logout', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const token = request.cookies[REFRESH_COOKIE];
+    if (token) {
+      await revokeRefreshToken(token);
+    }
+    reply.clearCookie(REFRESH_COOKIE, { path: '/' });
+    return { message: 'Logged out' };
+  });
 }
