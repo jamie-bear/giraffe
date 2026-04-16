@@ -15,13 +15,7 @@ export interface ProbeResult {
  */
 export function probeStream(url: string): Promise<ProbeResult> {
   return new Promise((resolve, reject) => {
-    const args = [
-      '-v', 'quiet',
-      '-print_format', 'json',
-      '-show_streams',
-      '-show_format',
-      url,
-    ];
+    const args = ['-v', 'quiet', '-print_format', 'json', '-show_streams', '-show_format', url];
 
     execFile('ffprobe', args, { timeout: 30_000 }, (err, stdout) => {
       if (err) {
@@ -98,37 +92,59 @@ export class FfmpegWorker extends EventEmitter {
 
     const args: string[] = [
       '-hide_banner',
-      '-loglevel', 'warning',
-      '-i', inputUrl,
+      '-loglevel',
+      'warning',
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_on_network_error',
+      '1',
+      '-reconnect_on_http_error',
+      '4xx,5xx',
+      '-reconnect_delay_max',
+      '5',
+      '-rw_timeout',
+      '15000000',
+      '-i',
+      inputUrl,
     ];
 
     if (mode === 'remux') {
       // Copy video codec, only re-encode audio to AAC for compatibility
-      args.push(
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-b:a', '192k',
-      );
+      args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k');
     } else {
       // Full transcode to H.264 + AAC
       args.push(
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-crf', '22',
-        '-maxrate', '8M',
-        '-bufsize', '16M',
-        '-c:a', 'aac',
-        '-b:a', '192k',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '22',
+        '-maxrate',
+        '8M',
+        '-bufsize',
+        '16M',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
       );
     }
 
     // HLS output
     args.push(
-      '-f', 'hls',
-      '-hls_time', '4',
-      '-hls_list_size', '0',
-      '-hls_flags', 'independent_segments',
-      '-hls_segment_filename', segmentPattern,
+      '-f',
+      'hls',
+      '-hls_time',
+      '4',
+      '-hls_list_size',
+      '0',
+      '-hls_flags',
+      'independent_segments',
+      '-hls_segment_filename',
+      segmentPattern,
       playlistPath,
     );
 

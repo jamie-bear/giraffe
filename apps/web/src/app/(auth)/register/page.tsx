@@ -44,13 +44,10 @@ export default function RegisterPage() {
             className="mx-auto mb-8 h-28 w-28 drop-shadow-lg"
           />
           <h1 className="font-heading text-5xl text-text">Giraffe</h1>
-          <p className="mt-3 text-lg tracking-widest text-accent uppercase">
-            See Everything.
-          </p>
+          <p className="mt-3 text-lg tracking-widest text-accent uppercase">See Everything.</p>
           <div className="mx-auto mt-10 h-px w-24 bg-border" />
           <p className="mt-6 max-w-xs mx-auto text-sm leading-relaxed text-text-muted">
-            Your personal media center. Stream movies and TV shows from your
-            library, anywhere.
+            Your personal media center. Stream movies and TV shows from your library, anywhere.
           </p>
         </div>
       </div>
@@ -61,15 +58,9 @@ export default function RegisterPage() {
           {/* Mobile-only branding */}
           <div className="mb-10 flex flex-col items-center lg:hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/giraffe-logo-icon-v1.1.svg"
-              alt="Giraffe"
-              className="mb-4 h-16 w-16"
-            />
+            <img src="/giraffe-logo-icon-v1.1.svg" alt="Giraffe" className="mb-4 h-16 w-16" />
             <h1 className="font-heading text-3xl text-text">Giraffe</h1>
-            <p className="mt-1 text-xs tracking-widest text-accent uppercase">
-              See Everything.
-            </p>
+            <p className="mt-1 text-xs tracking-widest text-accent uppercase">See Everything.</p>
           </div>
 
           <div className="mb-8">
@@ -84,6 +75,7 @@ export default function RegisterPage() {
               id="email"
               label="Email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
@@ -92,6 +84,7 @@ export default function RegisterPage() {
             <Input
               id="username"
               label="Username"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="Choose a username"
@@ -103,6 +96,7 @@ export default function RegisterPage() {
               id="password"
               label="Password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="At least 8 characters"
